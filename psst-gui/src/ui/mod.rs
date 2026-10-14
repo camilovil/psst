@@ -12,8 +12,8 @@ use crate::{
     },
     webapi::WebApi,
     widget::{
-        icons, icons::SvgIcon, Border, Empty, MyWidgetExt, Overlay, RemoteImage, ThemeScope,
-        ViewDispatcher,
+        icons, icons::SvgIcon, Border, Empty, MyWidgetExt, Overlay, RemoteImage, SidePanel,
+        ThemeScope, ViewDispatcher,
     },
 };
 use credits::TrackCredits;
@@ -40,6 +40,7 @@ pub mod home;
 pub mod library;
 pub mod lyrics;
 pub mod menu;
+pub mod now_playing;
 pub mod playable;
 pub mod playback;
 pub mod playlist;
@@ -265,10 +266,17 @@ fn root_widget() -> impl Widget<AppState> {
         .min_bar_area(0.0)
         .solid_bar(true);
 
+    let content = SidePanel::new(split, now_playing::panel_widget(), |data: &AppState| {
+        data.config.show_now_playing_panel && data.playback.now_playing.is_some()
+    })
+    .side_width(now_playing::PANEL_WIDTH)
+    .min_main_width(theme::grid(60.0))
+    .gap(theme::GRID);
+
     let layout = Flex::column()
         .must_fill_main_axis(true)
         .with_child(global_topbar_widget())
-        .with_flex_child(split.padding((theme::GRID, 0.0)), 1.0)
+        .with_flex_child(content.padding((theme::GRID, 0.0)), 1.0)
         .with_child(playback::panel_widget());
 
     ThemeScope::new(layout)

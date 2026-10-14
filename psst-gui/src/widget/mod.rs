@@ -8,6 +8,7 @@ mod maybe;
 mod overlay;
 mod promise;
 pub mod remote_image;
+mod side_panel;
 mod theme;
 mod utils;
 
@@ -27,6 +28,7 @@ pub use maybe::Maybe;
 pub use overlay::Overlay;
 pub use promise::Async;
 pub use remote_image::RemoteImage;
+pub use side_panel::SidePanel;
 pub use theme::ThemeScope;
 pub use utils::{Border, Clip, FadeOut, Logger};
 

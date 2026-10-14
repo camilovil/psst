@@ -38,6 +38,14 @@ pub fn panel_widget() -> impl Widget<AppState> {
         .must_fill_main_axis(true)
         .main_axis_alignment(MainAxisAlignment::End)
         .with_child(
+            small_button_widget(&icons::NOW_PLAYING).on_left_click(
+                |_, _, data: &mut AppState, _| {
+                    data.config.show_now_playing_panel = !data.config.show_now_playing_panel;
+                    data.config.save();
+                },
+            ),
+        )
+        .with_child(
             small_button_widget(&icons::MUSIC_NOTE).on_left_click(|ctx, _, _, _| {
                 ctx.submit_command(TOGGLE_LYRICS);
             }),
@@ -137,44 +145,46 @@ fn playing_item_widget() -> impl Widget<NowPlaying> {
             ),
             1.0,
         )
-        .with_child(ViewSwitcher::new(
-            |now_playing: &NowPlaying, _| {
-                now_playing.item.track().is_some() && now_playing.library.saved_tracks.is_resolved()
-            },
-            |selector, _data, _env| match selector {
-                true => {
-                    // View is only show if now_playing's track isn't none
-                    ViewSwitcher::new(
-                        |now_playing: &NowPlaying, _| {
-                            now_playing
-                                .library
-                                .contains_track(now_playing.item.track().unwrap())
-                        },
-                        |selector: &bool, _, _| {
-                            match selector {
-                                true => &icons::CIRCLE_CHECK,
-                                false => &icons::CIRCLE_PLUS,
-                            }
-                            .scale(theme::ICON_SIZE_SMALL)
-                            .boxed()
-                        },
-                    )
-                    .on_left_click(|ctx, _, now_playing, _| {
-                        let track = now_playing.item.track().unwrap();
-                        if now_playing.library.contains_track(track) {
-                            ctx.submit_command(library::UNSAVE_TRACK.with(track.id))
-                        } else {
-                            ctx.submit_command(library::SAVE_TRACK.with(track.clone()))
-                        }
-                    })
-                    .padding(theme::grid(1.0))
-                    .boxed()
-                }
-                false => Box::new(Flex::column()),
-            },
-        ))
+        .with_child(save_button_widget(theme::ICON_SIZE_SMALL))
         .padding(theme::grid(1.0))
         .link()
+}
+
+/// Saves or unsaves the playing track; empty for episodes or until the
+/// library has loaded.
+pub fn save_button_widget(icon_size: Size) -> impl Widget<NowPlaying> {
+    ViewSwitcher::new(
+        |now_playing: &NowPlaying, _| {
+            now_playing.item.track().is_some() && now_playing.library.saved_tracks.is_resolved()
+        },
+        move |selector, _data, _env| match selector {
+            true => ViewSwitcher::new(
+                |now_playing: &NowPlaying, _| {
+                    now_playing
+                        .library
+                        .contains_track(now_playing.item.track().unwrap())
+                },
+                move |selector: &bool, _, _| match selector {
+                    true => icons::CIRCLE_CHECK
+                        .scale(icon_size)
+                        .with_color(theme::PRIMARY_DARK)
+                        .boxed(),
+                    false => icons::CIRCLE_PLUS.scale(icon_size).boxed(),
+                },
+            )
+            .on_left_click(|ctx, _, now_playing, _| {
+                let track = now_playing.item.track().unwrap();
+                if now_playing.library.contains_track(track) {
+                    ctx.submit_command(library::UNSAVE_TRACK.with(track.id))
+                } else {
+                    ctx.submit_command(library::SAVE_TRACK.with(track.clone()))
+                }
+            })
+            .padding(theme::grid(1.0))
+            .boxed(),
+            false => Box::new(Flex::column()),
+        },
+    )
 }
 
 fn cover_widget(size: f64) -> impl Widget<NowPlaying> {
