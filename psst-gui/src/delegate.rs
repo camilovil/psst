@@ -149,6 +149,10 @@ impl AppDelegate<AppState> for Delegate {
                 );
             }
             Handled::Yes
+        } else if let Some(token) = cmd.get(cmd::WEBAPI_TOKEN_REFRESHED) {
+            data.config.store_webapi_token(token.clone());
+            data.config.save();
+            Handled::Yes
         } else if cmd.is(cmd::SHOW_MAIN) {
             self.show_main(&data.config, ctx);
             Handled::Yes

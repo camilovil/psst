@@ -11,7 +11,7 @@ use std::{
 use druid::{
     im::Vector,
     image::{self, ImageFormat},
-    Data, ImageBuf,
+    Data, ExtEventSink, ImageBuf, Target,
 };
 
 use itertools::Itertools;
@@ -36,6 +36,7 @@ use ureq::{
 };
 
 use crate::{
+    cmd,
     data::{
         self, utils::sanitize_html_string, Album, AlbumType, Artist, ArtistAlbums, ArtistInfo,
         ArtistLink, ArtistOverview, ArtistStats, AudioAnalysis, Cached, DatePrecision, Episode,
@@ -57,6 +58,7 @@ pub struct WebApi {
     paginated_limit: usize,
     webapi_token: Mutex<Option<WebApiToken>>,
     webapi_client_id: Mutex<Option<String>>,
+    token_sink: Mutex<Option<ExtEventSink>>,
     // First-party session credentials, used for `api-partner.spotify.com`
     // (pathfinder GraphQL) calls, which reject the Web API OAuth token.
     session: Mutex<Option<SessionService>>,
@@ -87,6 +89,7 @@ impl WebApi {
             paginated_limit,
             webapi_token: Mutex::new(None),
             webapi_client_id: Mutex::new(None),
+            token_sink: Mutex::new(None),
             session: Mutex::new(None),
             login5: Login5::new(Some(Arc::clone(&client_token_provider)), proxy_url),
             client_token_provider,
@@ -112,6 +115,11 @@ impl WebApi {
     pub fn set_webapi_credentials(&self, client_id: Option<String>, token: Option<WebApiToken>) {
         *self.webapi_client_id.lock() = client_id;
         *self.webapi_token.lock() = token;
+    }
+
+    /// Where to report refreshed tokens, so they get saved to the config.
+    pub fn set_token_sink(&self, sink: ExtEventSink) {
+        *self.token_sink.lock() = Some(sink);
     }
 
     /// Install the authenticated core session, used to mint the first-party
@@ -155,10 +163,15 @@ impl WebApi {
                 match oauth::refresh_webapi_token(client_id, refresh_token) {
                     Ok(new_token) => {
                         let access_token = new_token.access_token.clone();
-                        // NOTE: only updates the in-memory cache. The durable
-                        // copy in config.json is refreshed by Config on the
-                        // next save; if Spotify rotates the refresh token and
-                        // the process exits before then, the user must re-login.
+                        // Spotify may rotate the refresh token, so the new one
+                        // must reach config.json or the next launch can't log in.
+                        if let Some(sink) = self.token_sink.lock().as_ref() {
+                            let _ = sink.submit_command(
+                                cmd::WEBAPI_TOKEN_REFRESHED,
+                                new_token.clone(),
+                                Target::Auto,
+                            );
+                        }
                         *token_guard = Some(new_token);
                         return Ok(access_token);
                     }

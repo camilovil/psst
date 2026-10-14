@@ -13,7 +13,7 @@ use platform_dirs::AppDirs;
 use psst_core::{
     cache::{mkdir_if_not_exists, CacheHandle},
     connection::Credentials,
-    oauth::{self, WebApiToken},
+    oauth::WebApiToken,
     player::PlaybackConfig,
     session::{SessionConfig, SessionConnection},
 };
@@ -252,36 +252,11 @@ impl Config {
         self.webapi_token = None;
     }
 
-    /// Try to get a valid Web API access token, refreshing if expired.
-    /// Returns `Ok(token)` if successful, `Err(...)` if no token or refresh fails.
-    pub fn get_or_refresh_webapi_token(&mut self) -> Result<WebApiToken, String> {
-        let client_id = self
-            .webapi_client_id_value()
-            .ok_or_else(|| "No Web API Client ID configured".to_string())?
-            .to_string();
-
-        if let Some(ref token) = self.webapi_token {
-            if !token.is_expired() {
-                return Ok(token.clone());
-            }
-
-            // Token is expired, try to refresh
-            if let Some(ref refresh_token) = token.refresh_token {
-                log::info!("Web API token expired, attempting refresh...");
-                match oauth::refresh_webapi_token(&client_id, refresh_token) {
-                    Ok(new_token) => {
-                        self.webapi_token = Some(new_token.clone());
-                        self.save();
-                        return Ok(new_token);
-                    }
-                    Err(e) => {
-                        log::error!("Failed to refresh Web API token: {e}");
-                    }
-                }
-            }
-        }
-
-        Err("No valid Web API token available. Browser-based authentication required.".to_string())
+    /// The stored Web API token, possibly expired. The WebApi refreshes it
+    /// lazily on first use and reports the new token back via
+    /// `cmd::WEBAPI_TOKEN_REFRESHED`.
+    pub fn stored_webapi_token(&self) -> Option<&WebApiToken> {
+        self.webapi_token.as_ref()
     }
 
     pub fn playback(&self) -> PlaybackConfig {

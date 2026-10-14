@@ -14,6 +14,9 @@ pub const WIDGET_SEARCH_INPUT: WidgetId = WidgetId::reserved(1);
 
 // Common
 pub const SHOW_MAIN: Selector = Selector::new("app.show-main");
+/// Sent by the WebApi after refreshing its token, so the GUI can persist it.
+pub const WEBAPI_TOKEN_REFRESHED: Selector<psst_core::oauth::WebApiToken> =
+    Selector::new("app.webapi.token-refreshed");
 pub const SHOW_ACCOUNT_SETUP: Selector = Selector::new("app.show-initial");
 pub const CLOSE_ALL_WINDOWS: Selector = Selector::new("app.close-all-windows");
 pub const QUIT_APP_WITH_SAVE: Selector = Selector::new("app.quit-with-save");
