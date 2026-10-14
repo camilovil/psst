@@ -1,10 +1,15 @@
 use std::sync::Arc;
 
 use druid::im::Vector;
-use druid::widget::{Either, Flex, Label, Scroll};
-use druid::{widget::List, LensExt, Selector, Widget, WidgetExt};
+use druid::widget::{Either, Flex, Label, LineBreaking, Scroll, SizedBox, ViewSwitcher};
+use druid::{widget::List, Data, LensExt, Selector, Size, Widget, WidgetExt};
 
-use crate::data::{Artist, Ctx, HomeDetail, MixedView, Show, Shows, Track, WithCtx};
+use crate::cmd;
+use crate::data::{
+    Artist, Ctx, HomeDetail, Library, MixedView, Nav, Playlist, Promise, Show, Shows, Track,
+    WithCtx,
+};
+use crate::widget::RemoteImage;
 use crate::ui::library::{LOAD_SHOWS, SAVE_SHOW, UNSAVE_SHOW};
 use crate::widget::Empty;
 use crate::{
@@ -16,13 +21,14 @@ use crate::{
 use super::{album, artist, playable, show, theme, track};
 use super::{
     playlist,
-    utils::{error_widget, spinner_widget},
+    utils::{error_widget, placeholder_widget, spinner_widget},
 };
 
 pub const LOAD_MADE_FOR_YOU: Selector = Selector::new("app.home.load-made-for-your");
 
 pub fn home_widget() -> impl Widget<AppState> {
     Flex::column()
+        .with_child(shortcuts_widget())
         .with_child(made_for_you())
         .with_child(jump_back_in())
         .with_child(user_top_mixes())
@@ -35,6 +41,65 @@ pub fn home_widget() -> impl Widget<AppState> {
         .with_child(user_top_artists_widget())
         .with_child(simple_title_label("Your top tracks"))
         .with_child(user_top_tracks_widget())
+}
+
+const SHORTCUT_COUNT: usize = 8;
+
+/// Quick-access tiles at the top of Home, like Spotify, made from the first
+/// playlists in the library.
+fn shortcuts_widget() -> impl Widget<AppState> {
+    ViewSwitcher::new(
+        |playlists: &Promise<Vector<Playlist>>, _| {
+            playlists
+                .resolved()
+                .map(|list| list.iter().take(SHORTCUT_COUNT).cloned().collect())
+                .unwrap_or_default()
+        },
+        |shortcuts: &Vector<Playlist>, _, _| {
+            let mut grid = Flex::column();
+            let shortcuts: Vec<_> = shortcuts.iter().collect();
+            for pair in shortcuts.chunks(2) {
+                let mut row = Flex::row().must_fill_main_axis(true);
+                row.add_flex_child(shortcut_tile(pair[0]), 1.0);
+                row.add_spacer(theme::GRID);
+                match pair.get(1) {
+                    Some(playlist) => row.add_flex_child(shortcut_tile(playlist), 1.0),
+                    // Keep a lone last tile at half width.
+                    None => row.add_flex_child(SizedBox::empty().expand_width(), 1.0),
+                }
+                grid.add_child(row);
+                grid.add_spacer(theme::GRID);
+            }
+            grid.padding((theme::grid(1.5), theme::grid(1.0))).boxed()
+        },
+    )
+    .lens(AppState::library.then(Library::playlists.in_arc()))
+}
+
+fn shortcut_tile<T: Data>(playlist: &Playlist) -> impl Widget<T> {
+    let size = theme::grid(7.0);
+    let url = playlist.image(size, size).map(|image| image.url.clone());
+    let link = playlist.link();
+
+    let cover = RemoteImage::new(placeholder_widget(), move |_: &T, _| url.clone())
+        .fix_size(size, size)
+        .clip(Size::new(size, size).to_rounded_rect(theme::cover_radius(size)));
+    let name = Label::new(playlist.name.to_string())
+        .with_font(theme::UI_FONT_MEDIUM)
+        .with_line_break_mode(LineBreaking::Clip);
+
+    Flex::row()
+        .with_child(cover)
+        .with_spacer(theme::grid(1.5))
+        .with_flex_child(name, 1.0)
+        .expand_width()
+        .link()
+        .rounded(theme::BUTTON_BORDER_RADIUS)
+        .background(theme::GREY_600)
+        .rounded(theme::BUTTON_BORDER_RADIUS)
+        .on_left_click(move |ctx, _, _, _| {
+            ctx.submit_command(cmd::NAVIGATE.with(Nav::PlaylistDetail(link.clone())));
+        })
 }
 
 fn simple_title_label(title: &str) -> impl Widget<AppState> {

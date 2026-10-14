@@ -177,7 +177,15 @@ impl AppState {
     pub fn navigate(&mut self, nav: &Nav) {
         if &self.nav != nav {
             let previous = mem::replace(&mut self.nav, nav.to_owned());
-            self.history.push_back(previous);
+            // Refining a search (e.g. while typing) replaces the results page,
+            // so going back doesn't step through every partial query.
+            let refines_search = matches!(
+                (&previous, nav),
+                (Nav::SearchResults(_), Nav::SearchResults(_))
+            );
+            if !refines_search {
+                self.history.push_back(previous);
+            }
             self.config.last_route.replace(nav.to_owned());
             Arc::make_mut(&mut self.common_ctx).nav = nav.to_owned();
         }

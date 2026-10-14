@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use druid::{
     widget::{
@@ -27,6 +27,8 @@ pub const LOAD_RESULTS: Selector<(Arc<str>, Option<SearchTopic>)> =
 pub const OPEN_LINK: Selector<SpotifyUrl> = Selector::new("app.search.open-link");
 pub const SET_TOPIC: Selector<Option<SearchTopic>> = Selector::new("app.search.set-topic");
 
+const LIVE_SEARCH_DELAY: Duration = Duration::from_millis(350);
+
 pub fn input_widget() -> impl Widget<AppState> {
     TextBox::new()
         .with_placeholder("What do you want to play?")
@@ -37,6 +39,15 @@ pub fn input_widget() -> impl Widget<AppState> {
             ctx.submit_command(cmd::NAVIGATE.with(Nav::SearchResults(query.clone().into())));
         }))
         .with_id(cmd::WIDGET_SEARCH_INPUT)
+        // Like Spotify, show results while typing, once the user pauses.
+        .on_debounce(LIVE_SEARCH_DELAY, |ctx, query, _| {
+            // Only for typing, not when something else sets the input.
+            if ctx.has_focus() && !query.trim().is_empty() {
+                ctx.submit_command(
+                    cmd::NAVIGATE.with(Nav::SearchResults(query.trim().into())),
+                );
+            }
+        })
         .expand_width()
         .lens(AppState::search.then(Search::input))
 }
