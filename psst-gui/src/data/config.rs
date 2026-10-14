@@ -144,7 +144,7 @@ impl Default for Config {
             volume: 1.0,
             last_route: Default::default(),
             queue_behavior: Default::default(),
-            show_track_cover: Default::default(),
+            show_track_cover: true,
             window_size: Size::new(theme::grid(80.0), theme::grid(100.0)),
             slider_scroll_scale: Default::default(),
             sort_order: Default::default(),

@@ -44,13 +44,14 @@ pub fn panel_widget() -> impl Widget<AppState> {
         )
         .with_child(super::volume_slider().fix_width(theme::grid(18.0)));
 
-    // Three columns like Spotify: track info, centered controls, extras.
+    // Three columns like Spotify: track info, centered controls, extras. Each
+    // column fills its share even when empty, so the controls stay centered.
     Flex::row()
         .must_fill_main_axis(true)
         .cross_axis_alignment(CrossAxisAlignment::Center)
-        .with_flex_child(item_info.lens(AppState::playback), 3.0)
-        .with_flex_child(controls.lens(AppState::playback), 4.0)
-        .with_flex_child(extras, 3.0)
+        .with_flex_child(item_info.lens(AppState::playback).expand_width(), 3.0)
+        .with_flex_child(controls.lens(AppState::playback).expand_width(), 4.0)
+        .with_flex_child(extras.expand_width(), 3.0)
         .padding(theme::GRID)
         .fix_height(theme::grid(11.0))
         .controller(PlaybackController::new())

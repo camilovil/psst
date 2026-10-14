@@ -17,12 +17,12 @@ use crate::{
         QueueEntry, RecommendationsRequest, Track,
     },
     ui::playlist,
-    widget::{fill_between::FillBetween, icons, Empty, MyWidgetExt, RemoteImage},
+    widget::{icons, Empty, MyWidgetExt, RemoteImage},
 };
 
 use super::{
     library,
-    playable::{self, PlayRow},
+    playable::PlayRow,
     theme,
     utils::{self, placeholder_widget},
 };
@@ -87,9 +87,15 @@ pub fn playable_widget(track: &Track, display: Display) -> impl Widget<PlayRow<A
             .with_font(theme::UI_FONT_MEDIUM)
             .with_line_break_mode(LineBreaking::Clip)
             .lens(PlayRow::item.then(Track::name.in_arc()))
-            .padding_right(theme::grid(1.0));
-        let is_playing = playable::is_playing_marker_widget().lens(PlayRow::is_playing);
-        major.add_flex_child(FillBetween::new(track_name, is_playing), 1.0);
+            .padding_right(theme::grid(1.0))
+            .expand_width()
+            .env_scope(|env, row: &PlayRow<Arc<Track>>| {
+                // Like Spotify, the track that is playing is shown in green.
+                if row.is_playing {
+                    env.set(theme::TEXT_COLOR, env.get(theme::PRIMARY_DARK));
+                }
+            });
+        major.add_flex_child(track_name, 1.0);
     }
 
     let mut minor_row = Flex::row();
@@ -150,11 +156,12 @@ pub fn playable_widget(track: &Track, display: Display) -> impl Widget<PlayRow<A
                 |row: &PlayRow<Arc<Track>>, _| row.ctx.library.contains_track(&row.item),
                 |selector: &bool, _, _| {
                     match selector {
-                        true => &icons::CIRCLE_CHECK,
-                        false => &icons::CIRCLE_PLUS,
+                        true => icons::CIRCLE_CHECK
+                            .scale(theme::ICON_SIZE_SMALL)
+                            .with_color(theme::PRIMARY_DARK)
+                            .boxed(),
+                        false => icons::CIRCLE_PLUS.scale(theme::ICON_SIZE_SMALL).boxed(),
                     }
-                    .scale(theme::ICON_SIZE_SMALL)
-                    .boxed()
                 },
             )
             .on_left_click(|ctx, _, row, _| {

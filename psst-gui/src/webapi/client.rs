@@ -202,7 +202,12 @@ impl WebApi {
             token: &str,
             client_token: Option<&str>,
             headers: &HashMap<String, String>,
+            timeout: Option<Duration>,
         ) -> ureq::RequestBuilder<B> {
+            let req_builder = match timeout {
+                Some(timeout) => req_builder.config().timeout_global(Some(timeout)).build(),
+                None => req_builder,
+            };
             let mut req = req_builder.header("Authorization", &format!("Bearer {token}"));
             if let Some(client_token) = client_token {
                 req = req.header("client-token", client_token);
@@ -215,16 +220,16 @@ impl WebApi {
         let ct = client_token.as_deref();
         let headers = request.get_headers();
         match request.get_method() {
-            Method::Get => configure_request(self.agent.get(&url), &token, ct, headers)
+            Method::Get => configure_request(self.agent.get(&url), &token, ct, headers, request.timeout)
                 .call()
                 .map_err(|err| Error::WebApiError(err.to_string())),
-            Method::Post => configure_request(self.agent.post(&url), &token, ct, headers)
+            Method::Post => configure_request(self.agent.post(&url), &token, ct, headers, request.timeout)
                 .send_json(request.get_body())
                 .map_err(|err| Error::WebApiError(err.to_string())),
-            Method::Put => configure_request(self.agent.put(&url), &token, ct, headers)
+            Method::Put => configure_request(self.agent.put(&url), &token, ct, headers, request.timeout)
                 .send_json(request.get_body())
                 .map_err(|err| Error::WebApiError(err.to_string())),
-            Method::Delete => configure_request(self.agent.delete(&url), &token, ct, headers)
+            Method::Delete => configure_request(self.agent.delete(&url), &token, ct, headers, request.timeout)
                 .force_send_body()
                 .send_json(request.get_body())
                 .map_err(|err| Error::WebApiError(err.to_string())),
@@ -1870,9 +1875,12 @@ impl WebApi {
             queries.insert(k.to_string(), v.to_string());
         }
 
+        // Covers are requested in bursts (a whole page at once), so give them
+        // more time than API calls before giving up.
         let request = RequestBuilder::new(path, Method::Get, None)
             .set_protocol(protocol)
-            .set_base_uri(base_uri);
+            .set_base_uri(base_uri)
+            .timeout(Duration::from_secs(15));
 
         let response = Self::with_retry(|| self.request(&request))?;
         let mut body = Vec::new();
@@ -1944,6 +1952,8 @@ struct RequestBuilder {
     // When set, authenticate with the first-party Login5 bearer + client-token
     // (for `api-partner.spotify.com`) instead of the Web API OAuth token.
     partner_auth: bool,
+    // Overrides the agent's global timeout for this request.
+    timeout: Option<Duration>,
 }
 
 impl RequestBuilder {
@@ -1958,7 +1968,13 @@ impl RequestBuilder {
             method,
             body,
             partner_auth: false,
+            timeout: None,
         }
+    }
+
+    fn timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = Some(timeout);
+        self
     }
 
     /// Authenticate this request with the first-party Login5 bearer +

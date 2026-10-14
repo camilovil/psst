@@ -2,8 +2,10 @@ use std::{cell::RefCell, cmp::Ordering, rc::Rc, sync::Arc};
 
 use druid::{
     im::Vector,
-    widget::{Button, Either, Flex, Label, LensWrap, LineBreaking, List, TextBox},
-    Insets, Lens, LensExt, LocalizedString, Menu, MenuItem, Selector, Size, UnitPoint, Widget,
+    widget::{
+        Button, CrossAxisAlignment, Either, Flex, Label, LensWrap, LineBreaking, List, TextBox,
+    },
+    Lens, LensExt, LocalizedString, Menu, MenuItem, Selector, Size, UnitPoint, Widget,
     WidgetExt, WindowDesc,
 };
 use itertools::Itertools;
@@ -48,19 +50,41 @@ pub fn list_widget() -> impl Widget<AppState> {
         utils::spinner_widget,
         || {
             List::new(|| {
-                Label::raw()
-                    .with_line_break_mode(LineBreaking::WordWrap)
-                    .with_text_size(theme::TEXT_SIZE_SMALL)
-                    .lens(Ctx::data().then(Playlist::name))
-                    .expand_width()
-                    .padding(Insets::uniform_xy(theme::grid(2.0), theme::grid(0.6)))
+                let name = Label::raw()
+                    .with_line_break_mode(LineBreaking::Clip)
+                    .with_font(theme::UI_FONT_MEDIUM)
+                    .lens(Ctx::data().then(Playlist::name));
+                let subtitle = Label::dynamic(|p: &WithCtx<Playlist>, _| {
+                    format!("Playlist • {}", p.data.owner.display_name)
+                })
+                .with_line_break_mode(LineBreaking::Clip)
+                .with_text_size(theme::TEXT_SIZE_SMALL)
+                .with_text_color(theme::PLACEHOLDER_COLOR);
+
+                Flex::row()
+                    .with_child(rounded_cover_widget(theme::grid(6.0)).lens(Ctx::data()))
+                    .with_spacer(theme::grid(1.5))
+                    .with_flex_child(
+                        Flex::column()
+                            .cross_axis_alignment(CrossAxisAlignment::Start)
+                            .with_child(name)
+                            .with_spacer(2.0)
+                            .with_child(subtitle),
+                        1.0,
+                    )
+                    .padding(theme::GRID)
                     .link()
+                    .rounded(theme::BUTTON_BORDER_RADIUS)
+                    .active(|p: &WithCtx<Playlist>, _| {
+                        matches!(&p.ctx.nav, Nav::PlaylistDetail(link) if link.id == p.data.id)
+                    })
                     .on_left_click(|ctx, _, playlist, _| {
                         ctx.submit_command(
                             cmd::NAVIGATE.with(Nav::PlaylistDetail(playlist.data.link())),
                         );
                     })
                     .context_menu(playlist_menu_ctx)
+                    .padding((theme::GRID, 0.0))
             })
         },
         utils::error_widget,
@@ -397,7 +421,6 @@ fn rounded_cover_widget(size: f64) -> impl Widget<Playlist> {
 }
 
 pub fn detail_widget() -> impl Widget<AppState> {
-    use druid::widget::CrossAxisAlignment;
 
     let playlist_top = async_playlist_info_widget().padding(theme::grid(1.0));
 
@@ -429,9 +452,8 @@ fn async_playlist_info_widget() -> impl Widget<AppState> {
 }
 
 fn playlist_info_widget() -> impl Widget<WithCtx<Playlist>> {
-    use druid::widget::CrossAxisAlignment;
 
-    let size = theme::grid(10.0);
+    let size = theme::grid(18.0);
     let playlist_cover = cover_widget(size)
         .lens(Ctx::data())
         .clip(Size::new(size, size).to_rounded_rect(theme::cover_radius(size)))
@@ -482,17 +504,31 @@ fn playlist_info_widget() -> impl Widget<WithCtx<Playlist>> {
         Empty,
     );
 
+    let kind_label = Label::new("Playlist").with_text_size(theme::TEXT_SIZE_SMALL);
+    let title_label = Label::raw()
+        .with_font(theme::UI_FONT_MEDIUM)
+        .with_text_size(theme::TEXT_SIZE_TITLE)
+        .with_line_break_mode(LineBreaking::WordWrap)
+        .lens(Playlist::name);
+    let byline = Flex::row()
+        .with_child(owner_label.with_font(theme::UI_FONT_MEDIUM))
+        .with_child(Label::new(" • ").with_text_color(theme::PLACEHOLDER_COLOR))
+        .with_child(track_count_label);
+
     let playlist_info = Flex::column()
         .cross_axis_alignment(CrossAxisAlignment::Start)
-        .with_child(owner_label)
-        .with_default_spacer()
-        .with_child(track_count_label)
+        .with_child(kind_label)
+        .with_spacer(theme::grid(0.5))
+        .with_child(title_label)
+        .with_spacer(theme::grid(1.0))
+        .with_child(byline)
         .with_child(description_widget)
         .with_child(visibility_widget);
 
     Flex::row()
+        .cross_axis_alignment(CrossAxisAlignment::End)
         .with_child(playlist_cover)
-        .with_default_spacer()
+        .with_spacer(theme::grid(2.5))
         .with_flex_child(playlist_info.lens(Ctx::data()), 1.0)
 }
 
