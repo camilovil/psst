@@ -21,16 +21,6 @@ impl<T: Data> Link<T> {
         }
     }
 
-    pub fn border(
-        mut self,
-        color: impl Into<KeyOrValue<Color>>,
-        width: impl Into<KeyOrValue<f64>>,
-    ) -> Self {
-        self.border_color = color.into();
-        self.border_width = width.into();
-        self
-    }
-
     pub fn rounded(mut self, radius: impl Into<KeyOrValue<RoundedRectRadii>>) -> Self {
         self.corner_radius = radius.into();
         self

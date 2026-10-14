@@ -2,10 +2,13 @@ use std::time::Duration;
 
 use druid::{
     kurbo::{Affine, BezPath},
-    widget::{CrossAxisAlignment, Either, Flex, Label, LineBreaking, Spinner, ViewSwitcher},
+    widget::{
+        CrossAxisAlignment, Either, Flex, Label, LineBreaking, MainAxisAlignment, SizedBox,
+        Spinner, ViewSwitcher,
+    },
     BoxConstraints, Cursor, Data, Env, Event, EventCtx, LayoutCtx, LensExt, LifeCycle,
-    LifeCycleCtx, MouseButton, PaintCtx, Point, Rect, RenderContext, Size, UpdateCtx, Widget,
-    WidgetExt, WidgetPod,
+    LifeCycleCtx, MouseButton, PaintCtx, Rect, RenderContext, Size, UpdateCtx, Widget,
+    WidgetExt,
 };
 use itertools::Itertools;
 
@@ -25,25 +28,39 @@ use crate::{
 use super::{episode, library, theme, track, utils};
 
 pub fn panel_widget() -> impl Widget<AppState> {
-    let seek_bar = Maybe::or_empty(SeekBar::new).lens(Playback::now_playing);
     let item_info = Maybe::or_empty(playing_item_widget).lens(Playback::now_playing);
     let controls = Either::new(
-        |playback, _| playback.now_playing.is_some(),
+        |playback: &Playback, _| playback.now_playing.is_some(),
         player_widget(),
         Empty,
     );
-    Flex::column()
-        .with_child(seek_bar)
-        .with_child(BarLayout::new(item_info, controls))
-        .lens(AppState::playback)
+    let extras = Flex::row()
+        .must_fill_main_axis(true)
+        .main_axis_alignment(MainAxisAlignment::End)
+        .with_child(
+            small_button_widget(&icons::MUSIC_NOTE).on_left_click(|ctx, _, _, _| {
+                ctx.submit_command(TOGGLE_LYRICS);
+            }),
+        )
+        .with_child(super::volume_slider().fix_width(theme::grid(18.0)));
+
+    // Three columns like Spotify: track info, centered controls, extras.
+    Flex::row()
+        .must_fill_main_axis(true)
+        .cross_axis_alignment(CrossAxisAlignment::Center)
+        .with_flex_child(item_info.lens(AppState::playback), 3.0)
+        .with_flex_child(controls.lens(AppState::playback), 4.0)
+        .with_flex_child(extras, 3.0)
+        .padding(theme::GRID)
+        .fix_height(theme::grid(11.0))
         .controller(PlaybackController::new())
-        .on_command(ADD_TO_QUEUE, |_, _, data| {
+        .on_command(ADD_TO_QUEUE, |_, _, data: &mut AppState| {
             data.info_alert("Track added to queue.")
         })
 }
 
 fn playing_item_widget() -> impl Widget<NowPlaying> {
-    let cover_art = cover_widget(theme::grid(10.0));
+    let cover_art = cover_widget(theme::grid(7.0));
 
     let name = PlayableMatcher::new()
         .track(
@@ -183,32 +200,49 @@ fn playback_origin_icon(origin: &PlaybackOrigin) -> &'static SvgIcon {
 }
 
 fn player_widget() -> impl Widget<Playback> {
-    Flex::row()
+    let buttons = Flex::row()
+        .with_child(queue_behavior_widget())
+        .with_spacer(theme::grid(1.5))
         .with_child(
             small_button_widget(&icons::SKIP_BACK).on_left_click(|ctx, _, _, _| {
                 ctx.submit_command(cmd::PLAY_PREVIOUS);
             }),
         )
-        .with_default_spacer()
+        .with_spacer(theme::grid(1.5))
         .with_child(player_play_pause_widget())
-        .with_default_spacer()
+        .with_spacer(theme::grid(1.5))
         .with_child(
             small_button_widget(&icons::SKIP_FORWARD).on_left_click(|ctx, _, _, _| {
                 ctx.submit_command(cmd::PLAY_NEXT);
             }),
         )
-        .with_default_spacer()
-        .with_child(queue_behavior_widget())
-        .with_default_spacer()
-        .with_child(Maybe::or_empty(durations_widget).lens(Playback::now_playing))
-        .with_child(
-            small_button_widget(&icons::MUSIC_NOTE)
-                .align_right()
-                .on_left_click(|ctx, _, _, _| {
-                    ctx.submit_command(TOGGLE_LYRICS);
-                }),
-        )
-        .padding(theme::grid(2.0))
+        .with_spacer(theme::grid(1.5))
+        // Balances the queue behavior button so play/pause stays centered.
+        .with_child(SizedBox::empty().width(theme::grid(4.5)));
+
+    Flex::column()
+        .with_child(buttons)
+        .with_spacer(theme::grid(0.5))
+        .with_child(Maybe::or_empty(progress_widget).lens(Playback::now_playing))
+}
+
+fn progress_widget() -> impl Widget<NowPlaying> {
+    let elapsed = Label::dynamic(|np: &NowPlaying, _| utils::as_minutes_and_seconds(np.progress))
+        .with_text_size(theme::TEXT_SIZE_SMALL)
+        .with_text_color(theme::PLACEHOLDER_COLOR);
+    let total = Label::dynamic(|np: &NowPlaying, _| {
+        utils::as_minutes_and_seconds(np.item.duration())
+    })
+    .with_text_size(theme::TEXT_SIZE_SMALL)
+    .with_text_color(theme::PLACEHOLDER_COLOR);
+
+    Flex::row()
+        .must_fill_main_axis(true)
+        .with_child(elapsed.align_right().fix_width(theme::grid(5.0)))
+        .with_spacer(theme::grid(1.0))
+        .with_flex_child(SeekBar::new(), 1.0)
+        .with_spacer(theme::grid(1.0))
+        .with_child(total.align_left().fix_width(theme::grid(5.0)))
 }
 
 fn player_play_pause_widget() -> impl Widget<Playback> {
@@ -217,24 +251,24 @@ fn player_play_pause_widget() -> impl Widget<Playback> {
         |state, _, _| match state {
             PlaybackState::Loading => Spinner::new()
                 .with_color(theme::GREY_700)
-                .fix_size(theme::grid(3.5), theme::grid(3.5))
-                .padding(theme::grid(1.25))
+                .fix_size(theme::grid(2.5), theme::grid(2.5))
+                .padding(theme::grid(1.0))
                 .background(theme::GREY_000)
                 .rounded(f64::INFINITY)
                 .on_left_click(|ctx, _, _, _| ctx.submit_command(cmd::PLAY_STOP))
                 .boxed(),
             PlaybackState::Playing => icons::PAUSE
-                .scale((theme::grid(3.5), theme::grid(3.5)))
+                .scale((theme::grid(2.5), theme::grid(2.5)))
                 .with_color(theme::GREY_700)
-                .padding(theme::grid(1.25))
+                .padding(theme::grid(1.0))
                 .background(theme::GREY_000)
                 .rounded(f64::INFINITY)
                 .on_left_click(|ctx, _, _, _| ctx.submit_command(cmd::PLAY_PAUSE))
                 .boxed(),
             PlaybackState::Paused => icons::PLAY
-                .scale((theme::grid(3.5), theme::grid(3.5)))
+                .scale((theme::grid(2.5), theme::grid(2.5)))
                 .with_color(theme::GREY_700)
-                .padding(theme::grid(1.25))
+                .padding(theme::grid(1.0))
                 .background(theme::GREY_000)
                 .rounded(f64::INFINITY)
                 .on_left_click(|ctx, _, _, _| ctx.submit_command(cmd::PLAY_RESUME))
@@ -291,106 +325,6 @@ fn faded_button_widget<T: Data>(svg: &SvgIcon) -> impl Widget<T> {
         .padding(theme::grid(1.0))
         .link()
         .rounded(theme::BUTTON_BORDER_RADIUS)
-}
-
-fn durations_widget() -> impl Widget<NowPlaying> {
-    Label::dynamic(|now_playing: &NowPlaying, _| {
-        format!(
-            "{} / {}",
-            utils::as_minutes_and_seconds(now_playing.progress),
-            utils::as_minutes_and_seconds(now_playing.item.duration())
-        )
-    })
-    .with_text_size(theme::TEXT_SIZE_SMALL)
-    .with_text_color(theme::PLACEHOLDER_COLOR)
-    .fix_width(theme::grid(9.0))
-}
-
-struct BarLayout<T, I, P> {
-    item: WidgetPod<T, I>,
-    player: WidgetPod<T, P>,
-}
-
-impl<T, I, P> BarLayout<T, I, P>
-where
-    T: Data,
-    I: Widget<T>,
-    P: Widget<T>,
-{
-    fn new(item: I, player: P) -> Self {
-        Self {
-            item: WidgetPod::new(item),
-            player: WidgetPod::new(player),
-        }
-    }
-}
-
-impl<T, I, P> Widget<T> for BarLayout<T, I, P>
-where
-    T: Data,
-    I: Widget<T>,
-    P: Widget<T>,
-{
-    fn event(&mut self, ctx: &mut EventCtx, event: &Event, data: &mut T, env: &Env) {
-        self.item.event(ctx, event, data, env);
-        self.player.event(ctx, event, data, env);
-    }
-
-    fn lifecycle(&mut self, ctx: &mut LifeCycleCtx, event: &LifeCycle, data: &T, env: &Env) {
-        self.item.lifecycle(ctx, event, data, env);
-        self.player.lifecycle(ctx, event, data, env);
-    }
-
-    fn update(&mut self, ctx: &mut UpdateCtx, _old_data: &T, data: &T, env: &Env) {
-        self.item.update(ctx, data, env);
-        self.player.update(ctx, data, env);
-    }
-
-    fn layout(&mut self, ctx: &mut LayoutCtx, bc: &BoxConstraints, data: &T, env: &Env) -> Size {
-        let max = bc.max();
-
-        const PLAYER_OPTICAL_CENTER: f64 = 60.0 + theme::GRID * 2.0;
-
-        // Layout the player with loose constraints.
-        let player = self.player.layout(ctx, &bc.loosen(), data, env);
-        let player_centered = max.width > player.width * 2.25;
-
-        // Layout the item to the available space.
-        let item_max = if player_centered {
-            Size::new(max.width * 0.5 - PLAYER_OPTICAL_CENTER, max.height)
-        } else {
-            Size::new(max.width - player.width, max.height)
-        };
-        let item = self
-            .item
-            .layout(ctx, &BoxConstraints::new(Size::ZERO, item_max), data, env);
-
-        let total = Size::new(max.width, player.height.max(item.height));
-
-        // Put the item to the top left.
-        self.item.set_origin(ctx, Point::ORIGIN);
-
-        // Put the player either to the center or to the right.
-        let player_pos = if player_centered {
-            Point::new(
-                total.width * 0.5 - PLAYER_OPTICAL_CENTER,
-                total.height * 0.5 - player.height * 0.5,
-            )
-        } else {
-            Point::new(
-                total.width - player.width,
-                total.height * 0.5 - player.height * 0.5,
-            )
-        };
-        self.player.set_origin(ctx, player_pos);
-
-        total
-    }
-
-    fn paint(&mut self, ctx: &mut PaintCtx, data: &T, env: &Env) {
-        self.item.paint(ctx, data, env);
-        self.player.paint(ctx, data, env);
-    }
 }
 
 struct SeekBar {
@@ -466,7 +400,7 @@ impl Widget<NowPlaying> for SeekBar {
         _data: &NowPlaying,
         _env: &Env,
     ) -> Size {
-        Size::new(bc.max().width, theme::grid(1.0))
+        Size::new(bc.max().width, theme::grid(1.5))
     }
 
     fn paint(&mut self, ctx: &mut PaintCtx, data: &NowPlaying, env: &Env) {
@@ -562,28 +496,36 @@ fn paint_audio_analysis(ctx: &mut PaintCtx, data: &NowPlaying, path: &BezPath, e
 }
 
 fn paint_progress_bar(ctx: &mut PaintCtx, data: &NowPlaying, env: &Env) {
+    const TRACK_HEIGHT: f64 = 4.0;
+    const KNOB_RADIUS: f64 = 6.0;
+
     let elapsed_time = data.progress.as_secs_f64();
     let total_time = data.item.duration().as_secs_f64();
-
-    let (elapsed_color, remaining_color) = if ctx.is_hot() {
-        (env.get(theme::GREY_200), env.get(theme::GREY_500))
+    let elapsed_frac = if total_time > 0.0 {
+        (elapsed_time / total_time).clamp(0.0, 1.0)
     } else {
-        (env.get(theme::GREY_300), env.get(theme::GREY_600))
+        0.0
     };
+
     let bounds = ctx.size();
-
-    let elapsed_frac = elapsed_time / total_time;
+    let is_hot = ctx.is_hot();
+    let y = (bounds.height - TRACK_HEIGHT) / 2.0;
     let elapsed_width = bounds.width * elapsed_frac;
-    let remaining_width = bounds.width - elapsed_width;
-    let elapsed = Size::new(elapsed_width, bounds.height).round();
-    let remaining = Size::new(remaining_width, bounds.height).round();
 
-    ctx.fill(
-        Rect::from_origin_size(Point::ORIGIN, elapsed),
-        &elapsed_color,
-    );
-    ctx.fill(
-        Rect::from_origin_size(Point::new(elapsed.width, 0.0), remaining),
-        &remaining_color,
-    );
+    // Like Spotify: a white bar that turns green while hovered, with a knob.
+    let elapsed_color = if is_hot {
+        env.get(theme::PRIMARY_DARK)
+    } else {
+        env.get(theme::GREY_100)
+    };
+    let track = Rect::new(0.0, y, bounds.width, y + TRACK_HEIGHT).to_rounded_rect(TRACK_HEIGHT);
+    let elapsed =
+        Rect::new(0.0, y, elapsed_width, y + TRACK_HEIGHT).to_rounded_rect(TRACK_HEIGHT);
+    ctx.fill(track, &env.get(theme::GREY_500));
+    ctx.fill(elapsed, &elapsed_color);
+
+    if is_hot {
+        let knob = druid::kurbo::Circle::new((elapsed_width, bounds.height / 2.0), KNOB_RADIUS);
+        ctx.fill(knob, &env.get(theme::GREY_000));
+    }
 }

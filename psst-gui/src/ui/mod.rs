@@ -229,54 +229,49 @@ fn root_widget() -> impl Widget<AppState> {
         .vertical()
         .expand_height();
 
-    let playlists = Flex::column()
+    let sidebar = Flex::column()
         .must_fill_main_axis(true)
         .with_child(sidebar_menu_widget())
         .with_default_spacer()
         .with_flex_child(playlists, 1.0)
-        .padding(if cfg!(target_os = "macos") {
-            // Accommodate the window controls on Mac.
-            Insets::new(0.0, 24.0, 0.0, 0.0)
-        } else {
-            Insets::ZERO
-        });
-
-    let controls = Flex::column()
-        .with_default_spacer()
-        .with_child(volume_slider())
-        .with_default_spacer()
-        .with_child(user::user_widget())
-        .center()
-        .fix_height(88.0)
-        .background(Border::Top.with_color(theme::GREY_500));
-
-    let sidebar = Flex::column()
-        .with_flex_child(playlists, 1.0)
-        .with_child(controls)
-        .background(theme::BACKGROUND_DARK);
+        .with_child(
+            user::user_widget()
+                .padding((theme::grid(2.0), theme::grid(1.5)))
+                .background(Border::Top.with_color(theme::GREY_600)),
+        )
+        .background(theme::BACKGROUND_LIGHT)
+        .rounded(theme::PANEL_RADIUS);
 
     let topbar = Flex::row()
         .must_fill_main_axis(true)
-        .with_child(topbar_back_button_widget())
-        .with_flex_child(topbar_title_widget(), 1.0)
+        .with_flex_child(topbar_title_widget().padding_left(theme::grid(2.0)), 1.0)
         .with_child(topbar_sort_widget())
-        .background(Border::Bottom.with_color(theme::BACKGROUND_DARK));
+        .background(Border::Bottom.with_color(theme::GREY_600));
 
     let main = Flex::column()
         .cross_axis_alignment(CrossAxisAlignment::Start)
         .with_child(topbar)
         .with_flex_child(Overlay::bottom(route_widget(), alert_widget()), 1.0)
-        .with_child(playback::panel_widget())
-        .background(theme::BACKGROUND_LIGHT);
+        .background(theme::BACKGROUND_LIGHT)
+        .rounded(theme::PANEL_RADIUS)
+        .padding_left(theme::GRID);
 
+    // The split bar is invisible; the gap between the panels comes from the
+    // padding on `main`, so the black backdrop shows through like in Spotify.
     let split = Split::columns(sidebar, main)
-        .split_point(0.2)
-        .bar_size(1.0)
-        .min_size(150.0, 300.0)
-        .min_bar_area(1.0)
+        .split_point(0.22)
+        .bar_size(0.0)
+        .min_size(180.0, 300.0)
+        .min_bar_area(0.0)
         .solid_bar(true);
 
-    ThemeScope::new(split)
+    let layout = Flex::column()
+        .must_fill_main_axis(true)
+        .with_child(global_topbar_widget())
+        .with_flex_child(split.padding((theme::GRID, 0.0)), 1.0)
+        .with_child(playback::panel_widget());
+
+    ThemeScope::new(layout)
         .controller(SessionController)
         .controller(NavController)
         .controller(SortController)
@@ -405,8 +400,13 @@ fn route_widget() -> impl Widget<AppState> {
 
 fn sidebar_menu_widget() -> impl Widget<AppState> {
     Flex::column()
-        .with_default_spacer()
-        .with_child(sidebar_link_widget("Home", Some(&icons::HOME), Nav::Home))
+        .cross_axis_alignment(CrossAxisAlignment::Start)
+        .with_child(
+            Label::new("Your Library")
+                .with_font(theme::UI_FONT_MEDIUM)
+                .with_text_size(theme::TEXT_SIZE_LARGE)
+                .padding((theme::grid(2.5), theme::grid(2.0), 0.0, theme::grid(1.0))),
+        )
         .with_child(sidebar_link_widget(
             "Tracks",
             Some(&icons::MUSIC_NOTE),
@@ -422,7 +422,54 @@ fn sidebar_menu_widget() -> impl Widget<AppState> {
             Some(&icons::PODCAST),
             Nav::Shows,
         ))
-        .with_child(search::input_widget().padding((theme::grid(1.0), theme::grid(1.0))))
+}
+
+fn global_topbar_widget() -> impl Widget<AppState> {
+    let home = icons::HOME
+        .scale((theme::grid(2.75), theme::grid(2.75)))
+        .padding(theme::grid(1.25))
+        .link()
+        .circle()
+        .background(theme::GREY_600)
+        .rounded(f64::INFINITY)
+        .on_left_click(|ctx, _, _, _| ctx.submit_command(cmd::NAVIGATE.with(Nav::Home)));
+
+    let search = Flex::row()
+        .with_child(
+            icons::SEARCH
+                .scale((theme::grid(2.25), theme::grid(2.25)))
+                .with_color(theme::GREY_300),
+        )
+        .with_flex_child(
+            search::input_widget().env_scope(|env, _| {
+                // The pill around the textbox provides the shape, so the
+                // textbox itself is drawn without background or border.
+                env.set(theme::BACKGROUND_LIGHT, Color::TRANSPARENT);
+                env.set(theme::BORDER_DARK, Color::TRANSPARENT);
+                env.set(theme::PRIMARY_LIGHT, Color::TRANSPARENT);
+                env.set(theme::TEXT_SIZE_NORMAL, 14.0);
+            }),
+            1.0,
+        )
+        .padding((theme::grid(1.75), theme::grid(0.5)))
+        .background(theme::GREY_600)
+        .rounded(f64::INFINITY)
+        .fix_width(theme::grid(45.0));
+
+    Flex::row()
+        .must_fill_main_axis(true)
+        .with_child(topbar_back_button_widget())
+        .with_flex_spacer(1.0)
+        .with_child(home)
+        .with_spacer(theme::grid(1.0))
+        .with_child(search)
+        .with_flex_spacer(1.0)
+        .padding(if cfg!(target_os = "macos") {
+            // Accommodate the window controls on Mac.
+            Insets::new(72.0, theme::GRID, theme::GRID, theme::GRID)
+        } else {
+            Insets::uniform(theme::GRID)
+        })
 }
 
 fn sidebar_link_widget(
@@ -473,7 +520,7 @@ fn sidebar_link_widget(
         .lens(AppState::nav)
 }
 
-fn volume_slider() -> impl Widget<AppState> {
+pub fn volume_slider() -> impl Widget<AppState> {
     const SAVE_DELAY: Duration = Duration::from_millis(100);
     const SAVE_TO_CONFIG: Selector = Selector::new("app.volume.save-to-config");
 

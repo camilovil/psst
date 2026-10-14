@@ -23,6 +23,10 @@ pub const BLUE_200: Key<Color> = Key::new("app.blue_200");
 
 pub const RED: Key<Color> = Key::new("app.red");
 
+/// Backdrop behind the rounded content panels.
+pub const BASE_BACKGROUND: Key<Color> = Key::new("app.base-background");
+pub const PANEL_RADIUS: f64 = 8.0;
+
 pub const MENU_BUTTON_BG_ACTIVE: Key<Color> = Key::new("app.menu-bg-active");
 pub const MENU_BUTTON_BG_INACTIVE: Key<Color> = Key::new("app.menu-bg-inactive");
 pub const MENU_BUTTON_FG_ACTIVE: Key<Color> = Key::new("app.menu-fg-active");
@@ -48,7 +52,7 @@ pub fn setup(env: &mut Env, state: &AppState) {
         Theme::Dark => setup_dark_theme(env),
     };
 
-    env.set(WINDOW_BACKGROUND_COLOR, env.get(GREY_700));
+    env.set(WINDOW_BACKGROUND_COLOR, env.get(BASE_BACKGROUND));
     env.set(TEXT_COLOR, env.get(GREY_100));
     env.set(ICON_COLOR, env.get(GREY_400));
     env.set(PLACEHOLDER_COLOR, env.get(GREY_300));
@@ -137,6 +141,7 @@ fn setup_light_theme(env: &mut Env) {
     env.set(GREY_500, Color::from_rgba32_u32(0xe5e6e7ff));
     env.set(GREY_600, Color::from_rgba32_u32(0xf5f6f7ff));
     env.set(GREY_700, Color::from_rgba32_u32(0xffffffff));
+    env.set(BASE_BACKGROUND, Color::from_rgba32_u32(0xe5e6e7ff));
     env.set(BLUE_100, Color::rgb8(0x5c, 0xc4, 0xff));
     env.set(BLUE_200, Color::rgb8(0x00, 0x8d, 0xdd));
 
@@ -158,6 +163,7 @@ fn setup_dark_theme(env: &mut Env) {
     env.set(GREY_500, Color::grey8(0x3a));
     env.set(GREY_600, Color::grey8(0x1f));
     env.set(GREY_700, Color::grey8(0x12));
+    env.set(BASE_BACKGROUND, Color::grey8(0x00));
     env.set(BLUE_100, Color::rgb8(0x1d, 0xb9, 0x54));
     env.set(BLUE_200, Color::rgb8(0x1e, 0xd7, 0x60));
 
