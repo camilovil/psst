@@ -4,8 +4,9 @@ use druid::{
     im::Vector,
     widget::{
         Button, CrossAxisAlignment, Either, Flex, Label, LensWrap, LineBreaking, List, TextBox,
+        ViewSwitcher,
     },
-    Lens, LensExt, LocalizedString, Menu, MenuItem, Selector, Size, UnitPoint, Widget,
+    Cursor, EventCtx, Lens, LensExt, LocalizedString, Menu, MenuItem, Selector, Size, UnitPoint, Widget,
     WidgetExt, WindowDesc,
 };
 use itertools::Itertools;
@@ -14,13 +15,14 @@ use crate::{
     cmd,
     data::{
         config::{SortCriteria, SortOrder},
-        AppState, Ctx, Library, Nav, Playlist, PlaylistAddTrack, PlaylistDetail, PlaylistLink,
-        PlaylistRemoveTrack, PlaylistTracks, Track, WithCtx,
+        AppState, Ctx, Library, Nav, Playable, PlaybackOrigin, PlaybackPayload, PlaybackState,
+        Playlist, PlaylistAddTrack, PlaylistDetail, PlaylistLink, PlaylistRemoveTrack,
+        PlaylistTracks, Track, WithCtx,
     },
     error::Error,
     ui::menu,
     webapi::WebApi,
-    widget::{Async, Empty, MyWidgetExt, RemoteImage, ThemeScope},
+    widget::{icons, Async, Empty, MyWidgetExt, RemoteImage, ThemeScope},
 };
 
 use super::{playable, theme, track, utils};
@@ -421,7 +423,6 @@ fn rounded_cover_widget(size: f64) -> impl Widget<Playlist> {
 }
 
 pub fn detail_widget() -> impl Widget<AppState> {
-
     let playlist_top = async_playlist_info_widget().padding(theme::grid(1.0));
 
     let playlist_tracks = async_tracks_widget();
@@ -431,7 +432,74 @@ pub fn detail_widget() -> impl Widget<AppState> {
         .with_spacer(theme::grid(1.0))
         .with_child(playlist_top)
         .with_spacer(theme::grid(1.0))
+        .with_child(play_button_widget())
         .with_child(playlist_tracks)
+}
+
+/// Spotify's big green play button: plays the playlist from the start, or
+/// pauses/resumes it when it is the one already playing. Hidden until the
+/// tracks have loaded.
+fn play_button_widget() -> impl Widget<AppState> {
+    ViewSwitcher::new(
+        |data: &AppState, _| {
+            let tracks = data.playlist_detail.tracks.resolved()?;
+            if tracks.tracks.is_empty() {
+                return None;
+            }
+            let playing = is_playing_from(data, &tracks.id)
+                && data.playback.state == PlaybackState::Playing;
+            Some(playing)
+        },
+        |state: &Option<bool>, _, _| match state {
+            None => Empty.boxed(),
+            Some(playing) => {
+                let icon = if *playing { &icons::PAUSE } else { &icons::PLAY };
+                icon.scale((theme::grid(3.0), theme::grid(3.0)))
+                    .with_color(theme::GREY_700)
+                    .padding(theme::grid(2.0))
+                    .background(theme::PRIMARY_DARK)
+                    .rounded(f64::INFINITY)
+                    .with_cursor(Cursor::Pointer)
+                    .on_left_click(|ctx, _, data: &mut AppState, _| {
+                        toggle_playlist_playback(ctx, data);
+                    })
+                    .padding((theme::grid(2.0), 0.0, 0.0, theme::grid(1.0)))
+                    .boxed()
+            }
+        },
+    )
+}
+
+fn is_playing_from(data: &AppState, playlist_id: &Arc<str>) -> bool {
+    matches!(
+        &data.playback.now_playing,
+        Some(np) if matches!(&np.origin, PlaybackOrigin::Playlist(link) if &link.id == playlist_id)
+    )
+}
+
+fn toggle_playlist_playback(ctx: &mut EventCtx, data: &AppState) {
+    let Some(tracks) = data.playlist_detail.tracks.resolved() else {
+        return;
+    };
+    if is_playing_from(data, &tracks.id) {
+        match data.playback.state {
+            PlaybackState::Playing => ctx.submit_command(cmd::PLAY_PAUSE),
+            PlaybackState::Paused => ctx.submit_command(cmd::PLAY_RESUME),
+            PlaybackState::Loading | PlaybackState::Stopped => {}
+        }
+    } else {
+        // Same payload a click on the first track would send.
+        let payload = PlaybackPayload {
+            items: tracks
+                .tracks
+                .iter()
+                .map(|track| Playable::Track(track.clone()))
+                .collect(),
+            origin: PlaybackOrigin::Playlist(tracks.link()),
+            position: 0,
+        };
+        ctx.submit_command(cmd::PLAY_TRACKS.with(payload));
+    }
 }
 
 fn async_playlist_info_widget() -> impl Widget<AppState> {
