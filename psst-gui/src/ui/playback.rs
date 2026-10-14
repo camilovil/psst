@@ -43,7 +43,7 @@ pub fn panel_widget() -> impl Widget<AppState> {
 }
 
 fn playing_item_widget() -> impl Widget<NowPlaying> {
-    let cover_art = cover_widget(theme::grid(8.0));
+    let cover_art = cover_widget(theme::grid(10.0));
 
     let name = PlayableMatcher::new()
         .track(
@@ -164,7 +164,7 @@ fn cover_widget(size: f64) -> impl Widget<NowPlaying> {
         np.cover_image_url(size, size).map(|url| url.into())
     })
     .fix_size(size, size)
-    .clip(Size::new(size, size).to_rounded_rect(4.0))
+    .clip(Size::new(size, size).to_rounded_rect(theme::cover_radius(size)))
     .on_left_click(|ctx, _, _, _| {
         ctx.submit_command(SHOW_ARTWORK);
     })
@@ -216,28 +216,27 @@ fn player_play_pause_widget() -> impl Widget<Playback> {
         |playback: &Playback, _| playback.state,
         |state, _, _| match state {
             PlaybackState::Loading => Spinner::new()
-                .with_color(theme::GREY_400)
-                .fix_size(theme::grid(3.0), theme::grid(3.0))
-                .padding(theme::grid(1.0))
-                .link()
-                .circle()
-                .border(theme::GREY_600, 1.0)
+                .with_color(theme::GREY_700)
+                .fix_size(theme::grid(3.5), theme::grid(3.5))
+                .padding(theme::grid(1.25))
+                .background(theme::GREY_000)
+                .rounded(f64::INFINITY)
                 .on_left_click(|ctx, _, _, _| ctx.submit_command(cmd::PLAY_STOP))
                 .boxed(),
             PlaybackState::Playing => icons::PAUSE
-                .scale((theme::grid(3.0), theme::grid(3.0)))
-                .padding(theme::grid(1.0))
-                .link()
-                .circle()
-                .border(theme::GREY_500, 1.0)
+                .scale((theme::grid(3.5), theme::grid(3.5)))
+                .with_color(theme::GREY_700)
+                .padding(theme::grid(1.25))
+                .background(theme::GREY_000)
+                .rounded(f64::INFINITY)
                 .on_left_click(|ctx, _, _, _| ctx.submit_command(cmd::PLAY_PAUSE))
                 .boxed(),
             PlaybackState::Paused => icons::PLAY
-                .scale((theme::grid(3.0), theme::grid(3.0)))
-                .padding(theme::grid(1.0))
-                .link()
-                .circle()
-                .border(theme::GREY_500, 1.0)
+                .scale((theme::grid(3.5), theme::grid(3.5)))
+                .with_color(theme::GREY_700)
+                .padding(theme::grid(1.25))
+                .background(theme::GREY_000)
+                .rounded(f64::INFINITY)
                 .on_left_click(|ctx, _, _, _| ctx.submit_command(cmd::PLAY_RESUME))
                 .boxed(),
             PlaybackState::Stopped => Empty.boxed(),
@@ -280,14 +279,14 @@ fn queue_behavior_icon(qb: &QueueBehavior) -> &'static SvgIcon {
 }
 
 fn small_button_widget<T: Data>(svg: &SvgIcon) -> impl Widget<T> {
-    svg.scale((theme::grid(2.0), theme::grid(2.0)))
+    svg.scale((theme::grid(2.5), theme::grid(2.5)))
         .padding(theme::grid(1.0))
         .link()
         .rounded(theme::BUTTON_BORDER_RADIUS)
 }
 
 fn faded_button_widget<T: Data>(svg: &SvgIcon) -> impl Widget<T> {
-    svg.scale((theme::grid(2.0), theme::grid(2.0)))
+    svg.scale((theme::grid(2.5), theme::grid(2.5)))
         .with_color(theme::PLACEHOLDER_COLOR)
         .padding(theme::grid(1.0))
         .link()
@@ -304,7 +303,7 @@ fn durations_widget() -> impl Widget<NowPlaying> {
     })
     .with_text_size(theme::TEXT_SIZE_SMALL)
     .with_text_color(theme::PLACEHOLDER_COLOR)
-    .fix_width(theme::grid(8.0))
+    .fix_width(theme::grid(9.0))
 }
 
 struct BarLayout<T, I, P> {

@@ -86,7 +86,7 @@ fn cover_widget(size: f64) -> impl Widget<Arc<Episode>> {
 
 fn rounded_cover_widget(size: f64) -> impl Widget<Arc<Episode>> {
     // TODO: Take the radius from theme.
-    cover_widget(size).clip(Size::new(size, size).to_rounded_rect(4.0))
+    cover_widget(size).clip(Size::new(size, size).to_rounded_rect(theme::cover_radius(size)))
 }
 
 fn episode_row_menu(row: &PlayRow<Arc<Episode>>) -> Menu<AppState> {

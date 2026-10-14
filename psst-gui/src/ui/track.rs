@@ -175,7 +175,7 @@ pub fn playable_widget(track: &Track, display: Display) -> impl Widget<PlayRow<A
             Flex::column()
                 .cross_axis_alignment(CrossAxisAlignment::Start)
                 .with_child(major)
-                .with_spacer(2.0)
+                .with_spacer(3.0)
                 .with_child(minor)
                 .on_left_click(|ctx, _, row, _| {
                     ctx.submit_notification(cmd::PLAY.with(row.position))
@@ -184,7 +184,7 @@ pub fn playable_widget(track: &Track, display: Display) -> impl Widget<PlayRow<A
         )
         .with_default_spacer()
         .with_child(saved.center())
-        .padding(theme::grid(1.0))
+        .padding((theme::grid(1.5), theme::grid(1.25)))
         .link()
         .active(|row: &PlayRow<Arc<Track>>, _env: &Env| {
             // Check if this track is the target of album detail navigation
@@ -211,7 +211,7 @@ fn cover_widget(size: f64) -> impl Widget<Arc<Track>> {
 }
 
 fn rounded_cover_widget(size: f64) -> impl Widget<Arc<Track>> {
-    cover_widget(size).clip(Size::new(size, size).to_rounded_rect(4.0))
+    cover_widget(size).clip(Size::new(size, size).to_rounded_rect(theme::cover_radius(size)))
 }
 
 fn popularity_stars(popularity: u32) -> String {

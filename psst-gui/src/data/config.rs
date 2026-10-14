@@ -325,8 +325,8 @@ impl AudioQuality {
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Data, Serialize, Deserialize, Default)]
 pub enum Theme {
-    #[default]
     Light,
+    #[default]
     Dark,
 }
 

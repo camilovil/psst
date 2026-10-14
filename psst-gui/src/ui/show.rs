@@ -51,7 +51,7 @@ fn info_widget() -> impl Widget<WithCtx<Arc<Show>>> {
 
     let image = rounded_cover_widget(size)
         .fix_size(size, size)
-        .clip(Size::new(size, size).to_rounded_rect(4.0))
+        .clip(Size::new(size, size).to_rounded_rect(theme::cover_radius(size)))
         .lens(Ctx::data())
         .context_menu(show_ctx_menu);
 
@@ -198,7 +198,7 @@ fn cover_widget(size: f64) -> impl Widget<Arc<Show>> {
 
 fn rounded_cover_widget(size: f64) -> impl Widget<Arc<Show>> {
     // TODO: Take the radius from theme.
-    cover_widget(size).clip(Size::new(size, size).to_rounded_rect(4.0))
+    cover_widget(size).clip(Size::new(size, size).to_rounded_rect(theme::cover_radius(size)))
 }
 
 fn show_ctx_menu(show: &WithCtx<Arc<Show>>) -> Menu<AppState> {

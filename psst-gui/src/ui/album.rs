@@ -98,7 +98,7 @@ fn cover_widget(size: f64) -> impl Widget<Arc<Album>> {
 }
 
 fn rounded_cover_widget(size: f64) -> impl Widget<Arc<Album>> {
-    cover_widget(size).clip(Size::new(size, size).to_rounded_rect(4.0))
+    cover_widget(size).clip(Size::new(size, size).to_rounded_rect(theme::cover_radius(size)))
 }
 
 pub fn album_widget(horizontal: bool) -> impl Widget<WithCtx<Arc<Album>>> {

@@ -146,7 +146,7 @@ fn artist_info_widget() -> impl Widget<WithCtx<ArtistInfo>> {
         move |artist: &ArtistInfo, _| Some(artist.main_image.clone()),
     )
     .fix_size(size, size)
-    .clip(Size::new(size, size).to_rounded_rect(4.0))
+    .clip(Size::new(size, size).to_rounded_rect(theme::cover_radius(size)))
     .lens(Ctx::data());
 
     let biography = Scroll::new(

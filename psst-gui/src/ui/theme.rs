@@ -80,7 +80,7 @@ pub fn setup(env: &mut Env, state: &AppState) {
     env.set(CURSOR_COLOR, env.get(GREY_000));
 
     env.set(PROGRESS_BAR_RADIUS, 4.0);
-    env.set(BUTTON_BORDER_RADIUS, 4.0);
+    env.set(BUTTON_BORDER_RADIUS, 8.0);
     env.set(BUTTON_BORDER_WIDTH, 1.0);
 
     env.set(
@@ -105,7 +105,7 @@ pub fn setup(env: &mut Env, state: &AppState) {
     env.set(WIDE_WIDGET_WIDTH, grid(12.0));
     env.set(BORDERED_WIDGET_HEIGHT, grid(4.0));
 
-    env.set(TEXTBOX_BORDER_RADIUS, 4.0);
+    env.set(TEXTBOX_BORDER_RADIUS, 8.0);
     env.set(TEXTBOX_BORDER_WIDTH, 1.0);
     env.set(TEXTBOX_INSETS, Insets::uniform_xy(grid(1.2), grid(1.0)));
 
@@ -148,20 +148,28 @@ fn setup_light_theme(env: &mut Env) {
 }
 
 fn setup_dark_theme(env: &mut Env) {
+    // Near-black surfaces with a green accent, in the spirit of Spotify's own
+    // client.
     env.set(GREY_000, Color::grey8(0xff));
-    env.set(GREY_100, Color::grey8(0xf2));
-    env.set(GREY_200, Color::grey8(0xe0));
-    env.set(GREY_300, Color::grey8(0xbd));
-    env.set(GREY_400, Color::grey8(0x82));
-    env.set(GREY_500, Color::grey8(0x4f));
-    env.set(GREY_600, Color::grey8(0x33));
-    env.set(GREY_700, Color::grey8(0x28));
-    env.set(BLUE_100, Color::rgb8(0x00, 0x8d, 0xdd));
-    env.set(BLUE_200, Color::rgb8(0x5c, 0xc4, 0xff));
+    env.set(GREY_100, Color::grey8(0xf5));
+    env.set(GREY_200, Color::grey8(0xdc));
+    env.set(GREY_300, Color::grey8(0xb3));
+    env.set(GREY_400, Color::grey8(0x8a));
+    env.set(GREY_500, Color::grey8(0x3a));
+    env.set(GREY_600, Color::grey8(0x1f));
+    env.set(GREY_700, Color::grey8(0x12));
+    env.set(BLUE_100, Color::rgb8(0x1d, 0xb9, 0x54));
+    env.set(BLUE_200, Color::rgb8(0x1e, 0xd7, 0x60));
 
-    env.set(RED, Color::rgba8(0xEB, 0x57, 0x57, 0xFF));
+    env.set(RED, Color::rgba8(0xF1, 0x5E, 0x6C, 0xFF));
 
-    env.set(LINK_HOT_COLOR, Color::rgba(1.0, 1.0, 1.0, 0.05));
-    env.set(LINK_ACTIVE_COLOR, Color::rgba(1.0, 1.0, 1.0, 0.025));
+    env.set(LINK_HOT_COLOR, Color::rgba(1.0, 1.0, 1.0, 0.07));
+    env.set(LINK_ACTIVE_COLOR, Color::rgba(1.0, 1.0, 1.0, 0.04));
     env.set(LINK_COLD_COLOR, Color::rgba(1.0, 1.0, 1.0, 0.0));
+}
+
+/// Corner radius for cover art, proportional to its size so thumbnails don't
+/// turn into circles while large covers still get soft corners.
+pub fn cover_radius(size: f64) -> f64 {
+    (size * 0.06).clamp(4.0, 12.0)
 }
