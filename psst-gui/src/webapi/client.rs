@@ -444,8 +444,30 @@ impl WebApi {
             home_sections: HomeSections,
         }
 
+        // Spotify mixes in entries this parser doesn't understand (e.g. "Liked
+        // Songs" in "Jump back in" comes as an `UnknownType` with null data), so
+        // drop those instead of failing the whole section.
+        fn skip_invalid<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+            T: DeserializeOwned,
+        {
+            let values = Vec::<serde_json::Value>::deserialize(deserializer)?;
+            Ok(values
+                .into_iter()
+                .filter_map(|value| match serde_json::from_value(value) {
+                    Ok(item) => Some(item),
+                    Err(err) => {
+                        log::debug!("skipping home section entry: {err}");
+                        None
+                    }
+                })
+                .collect())
+        }
+
         #[derive(Deserialize)]
         pub struct HomeSections {
+            #[serde(deserialize_with = "skip_invalid")]
             sections: Vec<Section>,
         }
 
@@ -470,6 +492,7 @@ impl WebApi {
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase")]
         pub struct SectionItems {
+            #[serde(deserialize_with = "skip_invalid")]
             items: Vec<Item>,
         }
 
