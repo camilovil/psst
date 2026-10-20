@@ -6,6 +6,7 @@ use std::{
     io,
     io::{Read, Write},
     net::{TcpStream, ToSocketAddrs},
+    time::Duration,
 };
 
 use byteorder::{ReadBytesExt, BE};
@@ -26,6 +27,10 @@ use crate::{
 
 use librespot_protocol::authentication::AuthenticationType;
 use protobuf::{Enum, Message, MessageField, SpecialFields};
+
+/// Longest silence tolerated on the session connection before it is considered
+/// dead.  The server pings every two minutes.
+const SILENT_CONNECTION_TIMEOUT: Duration = Duration::from_secs(4 * 60);
 
 // Device ID used for authentication message.
 const DEVICE_ID: &str = "Psst";
@@ -191,6 +196,12 @@ impl Transport {
             };
             if let Err(err) = stream.set_write_timeout(Some(NET_IO_TIMEOUT)) {
                 log::warn!("failed to set TCP write timeout: {err:?}");
+            }
+            // The server pings every two minutes, so a longer silence means the
+            // connection is gone (e.g. the network changed while asleep). The
+            // read error ends the session, and the next request reconnects.
+            if let Err(err) = stream.set_read_timeout(Some(SILENT_CONNECTION_TIMEOUT)) {
+                log::warn!("failed to set TCP read timeout: {err:?}");
             }
             log::info!("successfully connected to AP: {ap}");
             return Self::exchange_keys(stream);

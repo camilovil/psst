@@ -10,8 +10,13 @@ mod ui;
 mod webapi;
 mod widget;
 
+use std::{
+    fs::{self, File},
+    io::{self, Write},
+};
+
 use druid::AppLauncher;
-use env_logger::{Builder, Env};
+use env_logger::{Builder, Env, Target};
 use webapi::WebApi;
 
 use psst_core::cache::Cache;
@@ -26,12 +31,15 @@ const ENV_LOG_STYLE: &str = "PSST_LOG_STYLE";
 
 fn main() {
     // Setup logging from the env variables, with defaults.
-    Builder::from_env(
+    let mut logger = Builder::from_env(
         Env::new()
             .filter_or(ENV_LOG, "info")
             .write_style(ENV_LOG_STYLE),
-    )
-    .init();
+    );
+    if let Some(file) = open_log_file() {
+        logger.target(Target::Pipe(Box::new(Tee { file })));
+    }
+    logger.init();
 
     // Load configuration
     let config = Config::load().unwrap_or_default();
@@ -99,4 +107,37 @@ fn main() {
         .delegate(delegate)
         .launch(state)
         .expect("Application launch");
+}
+
+/// Release builds have no console on Windows, so also keep the log in a file
+/// next to the cache, to be able to tell what went wrong afterwards.
+fn open_log_file() -> Option<File> {
+    const MAX_LOG_SIZE: u64 = 5 * 1024 * 1024;
+
+    let dir = Config::cache_dir()?;
+    fs::create_dir_all(&dir).ok()?;
+    let path = dir.join("psst.log");
+    // Keep one previous log around instead of growing without bound.
+    if fs::metadata(&path).is_ok_and(|meta| meta.len() > MAX_LOG_SIZE) {
+        let _ = fs::rename(&path, dir.join("psst.old.log"));
+    }
+    File::options().create(true).append(true).open(path).ok()
+}
+
+/// Writes log output both to stderr and to the log file.
+struct Tee {
+    file: File,
+}
+
+impl Write for Tee {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let _ = io::stderr().write_all(buf);
+        self.file.write_all(buf)?;
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        let _ = io::stderr().flush();
+        self.file.flush()
+    }
 }

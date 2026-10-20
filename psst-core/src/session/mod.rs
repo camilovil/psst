@@ -13,6 +13,7 @@ use std::{
         Arc,
     },
     thread::{self, JoinHandle},
+    time::Duration,
 };
 
 use crossbeam_channel::{unbounded, Receiver, Sender};
@@ -33,6 +34,11 @@ use self::{
     audio_key::AudioKeyDispatcher,
     mercury::{MercuryDispatcher, MercuryRequest, MercuryResponse},
 };
+
+/// How long to wait for the server to answer a request.  A connection that
+/// died silently (e.g. after the machine slept) never answers, and without a
+/// limit playback would hang in the loading state until restart.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Configuration values needed to open the session connection.
 #[derive(Clone)]
@@ -235,7 +241,7 @@ impl SessionHandle {
             .send(DispatchCmd::MercuryReq { callback, request })
             .ok()
             .ok_or(Error::SessionDisconnected)?;
-        let response = receiver.recv().ok().ok_or(Error::SessionDisconnected)?;
+        let response = self.wait_for_response(&receiver)?;
         let first_part = response
             .payload
             .into_iter()
@@ -254,7 +260,7 @@ impl SessionHandle {
             })
             .ok()
             .ok_or(Error::SessionDisconnected)?;
-        receiver.recv().ok().ok_or(Error::SessionDisconnected)?
+        self.wait_for_response(&receiver)?
     }
 
     pub fn get_country_code(&self) -> Option<String> {
@@ -262,7 +268,19 @@ impl SessionHandle {
         self.sender
             .send(DispatchCmd::CountryCodeReq { callback })
             .ok()?;
-        receiver.recv().ok()?
+        self.wait_for_response(&receiver).ok()?
+    }
+
+    /// Wait for the dispatcher to answer.  On timeout, assume the connection
+    /// is dead and shut it down, so the next request opens a fresh one.
+    fn wait_for_response<T>(&self, receiver: &Receiver<T>) -> Result<T, Error> {
+        receiver.recv_timeout(REQUEST_TIMEOUT).map_err(|err| {
+            if err.is_timeout() {
+                log::warn!("session request timed out, dropping the connection");
+                self.request_shutdown();
+            }
+            Error::SessionDisconnected
+        })
     }
 
     pub fn request_shutdown(&self) {

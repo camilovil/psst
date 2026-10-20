@@ -134,6 +134,13 @@ impl Player {
                     self.consecutive_loading_failures = 0;
                     self.play_loaded(loaded_item);
                 }
+                Err(Error::SessionDisconnected) if self.consecutive_loading_failures == 0 => {
+                    // The session reconnects on the next request, so retry the
+                    // same item once instead of skipping it.
+                    self.consecutive_loading_failures += 1;
+                    log::warn!("session lost while loading, retrying");
+                    self.load_and_play(item);
+                }
                 Err(err) => {
                     self.consecutive_loading_failures += 1;
                     if self.consecutive_loading_failures < STOP_AFTER_CONSECUTIVE_LOADING_FAILURES {
