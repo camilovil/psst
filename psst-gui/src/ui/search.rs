@@ -127,8 +127,23 @@ fn async_results_widget() -> impl Widget<AppState> {
             };
             WebApi::global().search(&q, &topics, limit)
         },
-        |_, data, (q, t)| data.search.results.defer((q, t)),
-        |_, data, r| data.search.results.update(r),
+        |_, data, (q, t)| {
+            // Keep the previous results on screen while typing refines the
+            // query, instead of flashing a spinner on every keystroke.
+            if data.search.results.is_resolved() {
+                data.search.pending = Some((q, t));
+            } else {
+                data.search.results.defer((q, t));
+            }
+        },
+        |_, data, (def, res)| {
+            if data.search.pending.as_ref() == Some(&def) {
+                data.search.pending = None;
+                data.search.results.resolve_or_reject(def, res);
+            } else {
+                data.search.results.update((def, res));
+            }
+        },
     )
     .on_command(SET_TOPIC, |ctx, topic, data: &mut AppState| {
         data.search.topic = *topic;
@@ -170,13 +185,26 @@ fn loaded_results_widget() -> impl Widget<WithCtx<SearchResults>> {
     )
 }
 
-fn results_list(include_headers: bool) -> Flex<WithCtx<SearchResults>> {
-    let mut column = Flex::column().cross_axis_alignment(CrossAxisAlignment::Fill);
-    column = column.with_child(artist_results_widget(include_headers));
-    column = column.with_child(album_results_widget(include_headers));
-    column = column.with_child(track_results_widget(include_headers));
-    column = column.with_child(playlist_results_widget(include_headers));
-    column.with_child(show_results_widget(include_headers))
+fn results_list(include_headers: bool) -> impl Widget<WithCtx<SearchResults>> {
+    // Like Spotify, lead with songs, which is usually what is searched for,
+    // unless the query names an artist exactly.
+    Either::new(
+        |results: &WithCtx<SearchResults>, _| results.data.artist_is_top_match(),
+        Flex::column()
+            .cross_axis_alignment(CrossAxisAlignment::Fill)
+            .with_child(artist_results_widget(include_headers))
+            .with_child(track_results_widget(include_headers))
+            .with_child(album_results_widget(include_headers))
+            .with_child(playlist_results_widget(include_headers))
+            .with_child(show_results_widget(include_headers)),
+        Flex::column()
+            .cross_axis_alignment(CrossAxisAlignment::Fill)
+            .with_child(track_results_widget(include_headers))
+            .with_child(artist_results_widget(include_headers))
+            .with_child(album_results_widget(include_headers))
+            .with_child(playlist_results_widget(include_headers))
+            .with_child(show_results_widget(include_headers)),
+    )
 }
 
 fn section_widget<T: Data, W: Widget<T> + 'static>(
@@ -260,7 +288,7 @@ fn show_results_widget(include_header: bool) -> impl Widget<WithCtx<SearchResult
 fn header_widget<T: Data>(text: impl Into<LabelText<T>>) -> impl Widget<T> {
     Label::new(text)
         .with_font(theme::UI_FONT_MEDIUM)
-        .with_text_color(theme::PLACEHOLDER_COLOR)
-        .with_text_size(theme::TEXT_SIZE_SMALL)
-        .padding((0.0, theme::grid(2.0), 0.0, theme::grid(1.0)))
+        .with_text_size(20.0)
+        .align_left()
+        .padding((theme::grid(1.5), theme::grid(3.0), 0.0, theme::grid(1.0)))
 }

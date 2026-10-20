@@ -133,6 +133,7 @@ impl AppState {
                 input: "".into(),
                 topic: None,
                 results: Promise::Empty,
+                pending: None,
             },
             recommend: Recommend {
                 knobs: Default::default(),
