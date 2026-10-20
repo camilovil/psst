@@ -244,6 +244,7 @@ impl AppDelegate<AppState> for Delegate {
             data.preferences.auth.clear();
         }
         if self.main_window == Some(id) {
+            log::info!("main window closed, quitting");
             data.config.volume = data.playback.volume;
             data.remember_playback();
             data.config.save();

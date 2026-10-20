@@ -41,6 +41,16 @@ fn main() {
     }
     logger.init();
 
+    // Panics on the UI thread abort the process (they can't unwind out of the
+    // window procedure), so record them in the log before that happens.
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let backtrace = std::backtrace::Backtrace::force_capture();
+        log::error!("panic: {info}
+{backtrace}");
+        default_hook(info);
+    }));
+
     // Load configuration
     let config = Config::load().unwrap_or_default();
 
