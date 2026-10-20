@@ -245,6 +245,7 @@ impl AppDelegate<AppState> for Delegate {
         }
         if self.main_window == Some(id) {
             data.config.volume = data.playback.volume;
+            data.remember_playback();
             data.config.save();
             ctx.submit_command(commands::CLOSE_ALL_WINDOWS);
             ctx.submit_command(commands::QUIT_APP);

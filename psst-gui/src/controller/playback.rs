@@ -1,4 +1,5 @@
 use std::{
+    sync::Arc,
     thread::{self, JoinHandle},
     time::Duration,
 };
@@ -7,12 +8,13 @@ use crossbeam_channel::Sender;
 use druid::{
     im::Vector,
     widget::{prelude::*, Controller},
-    Code, ExtEventSink, InternalLifeCycle, KbKey, WindowHandle,
+    Code, ExtEventSink, InternalLifeCycle, KbKey, Selector, WindowHandle,
 };
 use psst_core::{
     audio::{normalize::NormalizationLevel, output::DefaultAudioOutput},
     cache::Cache,
     cdn::Cdn,
+    item_id::ItemId,
     lastfm::LastFmClient,
     player::{item::PlaybackItem, PlaybackConfig, Player, PlayerCommand, PlayerEvent},
     session::SessionService,
@@ -27,9 +29,11 @@ use crate::{
     cmd,
     data::Nav,
     data::{
-        AppState, Config, NowPlaying, Playable, Playback, PlaybackOrigin, PlaybackState,
-        QueueBehavior, QueueEntry,
+        AlbumLink, AppState, Config, LastPlayed, LastPlayedOrigin, NowPlaying, Playable,
+        Playback, PlaybackOrigin, PlaybackPayload, PlaybackState, PlaylistLink, QueueBehavior,
+        QueueEntry, Track,
     },
+    webapi::WebApi,
     ui::lyrics,
 };
 
@@ -41,7 +45,34 @@ pub struct PlaybackController {
     has_scrobbled: bool,
     scrobbler: Option<Scrobbler>,
     startup: bool,
+    /// Last session's track, shown paused until the user resumes it.
+    pending_restore: Option<LastPlayed>,
+    /// Where to seek once the restored track starts playing.
+    pending_seek: Option<(ItemId, Duration)>,
 }
+
+/// The last played track was fetched and can be shown in the player.
+const RESTORE_TRACK_LOADED: Selector<(Arc<Track>, LastPlayed)> =
+    Selector::new("app.playback.restore-track-loaded");
+/// The queue around the last played track is ready to be played.
+const RESTORE_QUEUE_LOADED: Selector<(PlaybackPayload, Duration)> =
+    Selector::new("app.playback.restore-queue-loaded");
+fn last_played_origin(origin: &LastPlayedOrigin) -> PlaybackOrigin {
+    match origin {
+        LastPlayedOrigin::Playlist { id, name } => PlaybackOrigin::Playlist(PlaylistLink {
+            id: id.clone(),
+            name: name.clone(),
+        }),
+        LastPlayedOrigin::Album { id, name } => PlaybackOrigin::Album(AlbumLink {
+            id: id.clone(),
+            name: name.clone(),
+            images: Vector::new(),
+        }),
+        LastPlayedOrigin::Library => PlaybackOrigin::Library,
+        LastPlayedOrigin::Other => PlaybackOrigin::Home,
+    }
+}
+
 fn init_scrobbler_instance(data: &AppState) -> Option<Scrobbler> {
     if data.config.lastfm_enable {
         if let (Some(api_key), Some(api_secret), Some(session_key)) = (
@@ -78,7 +109,73 @@ impl PlaybackController {
             has_scrobbled: false,
             scrobbler: None,
             startup: true,
+            pending_restore: None,
+            pending_seek: None,
         }
+    }
+
+    /// Fetch the last played track in the background, to show it paused.
+    fn restore_last_played(&mut self, ctx: &mut LifeCycleCtx, data: &AppState) {
+        let Some(last) = data.config.last_played.clone() else {
+            return;
+        };
+        let sink = ctx.get_external_handle();
+        let widget_id = ctx.widget_id();
+        thread::spawn(move || match WebApi::global().get_track(&last.track_id) {
+            Ok(track) => {
+                let _ = sink.submit_command(RESTORE_TRACK_LOADED, (track, last), widget_id);
+            }
+            Err(err) => log::warn!("failed to restore last played track: {err}"),
+        });
+    }
+
+    /// If the player shows a restored track, rebuild its queue and start it
+    /// from where it was left. Returns false when there is nothing to restore.
+    fn resume_restored(&mut self, ctx: &mut EventCtx, data: &mut AppState) -> bool {
+        let Some(last) = self.pending_restore.take() else {
+            return false;
+        };
+        let Some(Playable::Track(track)) = data.playback.now_playing.as_ref().map(|np| np.item.clone())
+        else {
+            return false;
+        };
+        data.playback.state = PlaybackState::Loading;
+
+        let origin = last_played_origin(&last.origin);
+        let saved_tracks = data
+            .library
+            .saved_tracks
+            .resolved()
+            .map(|saved| saved.tracks.clone());
+        let sink = ctx.get_external_handle();
+        let widget_id = ctx.widget_id();
+        thread::spawn(move || {
+            let tracks = match &last.origin {
+                LastPlayedOrigin::Playlist { id, .. } => {
+                    WebApi::global().get_playlist_tracks(id).ok()
+                }
+                LastPlayedOrigin::Album { id, .. } => WebApi::global()
+                    .get_album(id)
+                    .ok()
+                    .map(|album| album.data.tracks.clone()),
+                LastPlayedOrigin::Library => saved_tracks,
+                LastPlayedOrigin::Other => None,
+            }
+            .unwrap_or_default();
+            let (items, position) = match tracks.iter().position(|t| t.id == track.id) {
+                Some(position) => (tracks.into_iter().map(Playable::Track).collect(), position),
+                // The origin can't be rebuilt or no longer has the track.
+                None => (Vector::unit(Playable::Track(track)), 0),
+            };
+            let payload = PlaybackPayload {
+                origin,
+                items,
+                position,
+            };
+            let progress = Duration::from_millis(last.progress_ms);
+            let _ = sink.submit_command(RESTORE_QUEUE_LOADED, (payload, progress), widget_id);
+        });
+        true
     }
 
     fn open_audio_output_and_start_threads(
@@ -445,8 +542,16 @@ where
                 self.has_scrobbled = false;
                 self.report_now_playing(&data.playback);
 
+                if let Some((seek_item, seek_to)) = self.pending_seek.take() {
+                    if seek_item == *item && !seek_to.is_zero() {
+                        self.seek(seek_to);
+                    }
+                }
+
                 if let Some(queued) = data.queued_entry(*item) {
                     data.start_playback(queued.item, queued.origin, progress.to_owned());
+                    data.remember_playback();
+                    data.config.save();
                     self.update_media_control_playback(&data.playback);
                     self.update_media_control_metadata(&data.playback);
                     if let Some(now_playing) = &data.playback.now_playing {
@@ -455,6 +560,29 @@ where
                 } else {
                     log::warn!("played item not found in playback queue");
                 }
+                ctx.set_handled();
+            }
+            Event::Command(cmd) if cmd.is(RESTORE_TRACK_LOADED) => {
+                let (track, last) = cmd.get_unchecked(RESTORE_TRACK_LOADED);
+                // Unless something started playing in the meantime.
+                if data.playback.now_playing.is_none() {
+                    data.playback.now_playing = Some(NowPlaying {
+                        item: Playable::Track(track.clone()),
+                        origin: last_played_origin(&last.origin),
+                        progress: Duration::from_millis(last.progress_ms),
+                        library: Arc::clone(&data.library),
+                    });
+                    data.playback.state = PlaybackState::Paused;
+                    self.pending_restore = Some(last.clone());
+                }
+                ctx.set_handled();
+            }
+            Event::Command(cmd) if cmd.is(RESTORE_QUEUE_LOADED) => {
+                let (payload, progress) = cmd.get_unchecked(RESTORE_QUEUE_LOADED);
+                if let Some(item) = payload.items.get(payload.position) {
+                    self.pending_seek = Some((item.id(), *progress));
+                }
+                ctx.submit_command(cmd::PLAY_TRACKS.with(payload.clone()).to(ctx.widget_id()));
                 ctx.set_handled();
             }
             Event::Command(cmd) if cmd.is(cmd::PLAYBACK_PROGRESS) => {
@@ -467,6 +595,8 @@ where
             }
             Event::Command(cmd) if cmd.is(cmd::PLAYBACK_PAUSING) => {
                 data.pause_playback();
+                data.remember_playback();
+                data.config.save();
                 self.update_media_control_playback(&data.playback);
                 ctx.set_handled();
             }
@@ -486,6 +616,8 @@ where
             }
             Event::Command(cmd) if cmd.is(cmd::PLAY_TRACKS) => {
                 let payload = cmd.get_unchecked(cmd::PLAY_TRACKS);
+                // Playing something else drops the restored track.
+                self.pending_restore = None;
                 data.playback.queue = payload
                     .items
                     .iter()
@@ -503,7 +635,9 @@ where
                 ctx.set_handled();
             }
             Event::Command(cmd) if cmd.is(cmd::PLAY_RESUME) => {
-                self.resume();
+                if !self.resume_restored(ctx, data) {
+                    self.resume();
+                }
                 ctx.set_handled();
             }
             Event::Command(cmd) if cmd.is(cmd::PLAY_PREVIOUS) => {
@@ -549,7 +683,9 @@ where
             }
             // Keyboard shortcuts.
             Event::KeyDown(key) if key.code == Code::Space => {
-                self.pause_or_resume();
+                if !self.resume_restored(ctx, data) {
+                    self.pause_or_resume();
+                }
                 ctx.set_handled();
             }
             Event::KeyDown(key) if key.code == Code::ArrowRight => {
@@ -600,6 +736,7 @@ where
 
                 // Initialize values loaded from the config.
                 self.set_volume(data.playback.volume);
+                self.restore_last_played(ctx, data);
                 self.set_queue_behavior(data.playback.queue_behavior);
 
                 // Request focus so we can receive keyboard events.

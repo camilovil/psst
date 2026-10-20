@@ -37,7 +37,10 @@ pub use crate::data::{
     artist::{
         Artist, ArtistAlbums, ArtistDetail, ArtistInfo, ArtistLink, ArtistOverview, ArtistStats,
     },
-    config::{AudioQuality, Authentication, Config, Preferences, PreferencesTab, Theme},
+    config::{
+        AudioQuality, Authentication, Config, LastPlayed, LastPlayedOrigin, Preferences,
+        PreferencesTab, Theme,
+    },
     ctx::Ctx,
     find::{FindQuery, Finder, MatchFindQuery},
     nav::{Nav, Route, SpotifyUrl},
@@ -274,6 +277,34 @@ impl AppState {
         if let Some(now_playing) = &mut self.playback.now_playing {
             now_playing.progress = progress;
         }
+    }
+
+    /// Store the playing track in the config, so the next launch can resume
+    /// it. Episodes are not remembered.
+    pub fn remember_playback(&mut self) {
+        let Some(now_playing) = &self.playback.now_playing else {
+            return;
+        };
+        let Playable::Track(track) = &now_playing.item else {
+            return;
+        };
+        let origin = match &now_playing.origin {
+            PlaybackOrigin::Playlist(link) => LastPlayedOrigin::Playlist {
+                id: link.id.clone(),
+                name: link.name.clone(),
+            },
+            PlaybackOrigin::Album(link) => LastPlayedOrigin::Album {
+                id: link.id.clone(),
+                name: link.name.clone(),
+            },
+            PlaybackOrigin::Library => LastPlayedOrigin::Library,
+            _ => LastPlayedOrigin::Other,
+        };
+        self.config.last_played = Some(LastPlayed {
+            track_id: track.id.0.to_base62().into(),
+            origin,
+            progress_ms: now_playing.progress.as_millis() as u64,
+        });
     }
 
     pub fn pause_playback(&mut self) {

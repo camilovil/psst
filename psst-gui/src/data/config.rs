@@ -3,6 +3,7 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{BufReader, BufWriter},
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 #[cfg(target_family = "unix")]
@@ -20,6 +21,25 @@ use psst_core::{
 use serde::{Deserialize, Serialize};
 
 use super::{Nav, Promise, QueueBehavior, SliderScrollScale};
+
+/// The track that was playing when the app was last used, so it can be offered
+/// for resuming on the next launch.
+#[derive(Clone, Debug, Data, PartialEq, Serialize, Deserialize)]
+pub struct LastPlayed {
+    /// Base62 track ID.
+    pub track_id: Arc<str>,
+    pub origin: LastPlayedOrigin,
+    pub progress_ms: u64,
+}
+
+/// Where playback started, enough to rebuild the queue around the track.
+#[derive(Clone, Debug, Data, PartialEq, Serialize, Deserialize)]
+pub enum LastPlayedOrigin {
+    Playlist { id: Arc<str>, name: Arc<str> },
+    Album { id: Arc<str>, name: Arc<str> },
+    Library,
+    Other,
+}
 use crate::ui::theme;
 
 #[derive(Clone, Debug, Data, Lens)]
@@ -118,6 +138,7 @@ pub struct Config {
     pub queue_behavior: QueueBehavior,
     pub show_track_cover: bool,
     pub show_now_playing_panel: bool,
+    pub last_played: Option<LastPlayed>,
     pub window_size: Size,
     pub slider_scroll_scale: SliderScrollScale,
     pub sort_order: SortOrder,
@@ -147,6 +168,7 @@ impl Default for Config {
             queue_behavior: Default::default(),
             show_track_cover: true,
             show_now_playing_panel: true,
+            last_played: None,
             window_size: Size::new(theme::grid(80.0), theme::grid(100.0)),
             slider_scroll_scale: Default::default(),
             sort_order: Default::default(),
